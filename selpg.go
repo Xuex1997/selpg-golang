@@ -15,7 +15,6 @@ import (
     "io"
     "flag"
     "bufio"
-    "errors"
 )
 /*================================= types =========================*/
 
@@ -56,7 +55,6 @@ func initalArgs(args *sp_args) {
 /*================================= usage() =======================*/
 
 func Usage() {
-	fmt.Printf("Program name:\n  %s (SeLect Pages)\nPurpose:\n  Sometimes one needs to extract only a specified range of pages from\nan input text file. This program allows the user to do that..\n", progname)
   	fmt.Printf("\nUSAGE: %s -s=start_page -e=end_page [ -f | -l=lines_per_page ] [ -ddest ] [ filename ]\n", progname);
     fmt.Printf("The arguments are:\n\n")
     fmt.Printf("\t-s=Number\tStart from Page <number>.\n")
@@ -64,14 +62,14 @@ func Usage() {
     fmt.Printf("\t-l=Number\t[options]Specify the number of line per page.Default is 72.\n")
     fmt.Printf("\t-f\t\t[options]Specify that the pages are sperated by \\f.\n")
     fmt.Printf("\t-d=lpnumber\t[options]Print this page at lpnumber printer.\n")
-    fmt.Printf("\t[filename]\t[options]Read input from the file.\n\n")
+    fmt.Printf("\t[filename]\t[options]Read input from the file and write output to the file.\n\n")
     fmt.Printf("If no file specified, %s will read input from stdin.\n\n", progname)
 }
 /*================================= process_args() ================*/
 
 func process_args(sa *sp_args) {
-	if sa.start_page < 0 && sa.end_page < 0 && os.Args[1][0] != '-'{
-        fmt.Printf("%s: args are error\nPlease ensure the form of args and the start Page is larger than the end,\nand both of them are bigger than 1", progname)
+	if sa.start_page <= 0 || sa.end_page <= 0 || sa.start_page > sa.end_page {
+        fmt.Printf("%s: args are error\nPlease ensure the form of args and the start Page is larger than the end,\nand both of them are bigger than 1\n", progname)
         flag.Usage()
         os.Exit(1)
     }
@@ -81,7 +79,7 @@ func process_args(sa *sp_args) {
         }
     }
     if sa.page_type == true && sa.page_len != -1 {
-        fmt.Printf("%s: page_type and page_len can't both exist.\n\n", progname)
+        fmt.Printf("%s: -l and -f can't both exist.\n\n", progname)
         flag.Usage()
         os.Exit(1)
     }
@@ -101,7 +99,11 @@ func process_input(sa *sp_args) {
 func write(sa *sp_args) {
 	In := sa.in_filename
 	Out := sa.out_filename
-
+    /*
+    O_RDWR：读写模式
+    O_CREATE：文件不存在就创建
+    O_TRUNC：打开并清空文件
+    */
     var err error
 	var Ibuf *bufio.Reader
 	if In != "" {
@@ -128,7 +130,8 @@ func write(sa *sp_args) {
 
 	var count int
 	count = sa.end_page - sa.start_page + 1
-	if !sa.page_type { /*read all the char from the file from the startpage*/
+	if !sa.page_type {
+	    /*read all the char from the file begin to the the startpage*/
 		for i := 1; i < sa.start_page; i++ {
 			for j := 0; j < sa.page_len; j++ {
 				Ibuf.ReadString('\n')
@@ -138,12 +141,8 @@ func write(sa *sp_args) {
 			for j := 0; j < sa.page_len; j++ {
 				line, err := Ibuf.ReadString('\n')
 				if err != nil {
-					if err == io.EOF && i != count && j != sa.page_len {
-						err2 := errors.New("the pages in the file is too less to read")
-						fmt.Fprintln(os.Stderr, "warning(file reading)3 ", err2)
-						return
-					} else {
-						fmt.Fprint(os.Stderr, "warning(file reading)4 ", err.Error())
+					if !(err == io.EOF && i != count && j != sa.page_len) {
+						fmt.Fprint(os.Stderr, "warning(file reading)3 ", err.Error())
 					}
 				}
 				if Obuf != nil {
@@ -151,6 +150,10 @@ func write(sa *sp_args) {
 				} else {
 					fmt.Print(line)
 				}
+				if len(line) == 0 {
+				    fmt.Printf("the start page is larger than the total page of this file,so there are nothing\n")
+			        return
+			    }
 			}
 		}
 	} else { /*the cut of the page*/
@@ -160,18 +163,18 @@ func write(sa *sp_args) {
 		for i := 0; i < count; i++ {
 			line, err := Ibuf.ReadString('\f')
 			if err != nil {
-				if err == io.EOF && i != count {
-					err3 := errors.New("the pages in the file is too less to read")
-					fmt.Fprintln(os.Stderr, "warning(file reading)5 ", err3)
-					return
-				} else {
-					fmt.Fprint(os.Stderr, "warning(file reading)6 ", err.Error())
+				if !(err == io.EOF && i != count) {
+					fmt.Fprint(os.Stderr, "warning(file reading)4 ", err.Error())
 				}
 			}
 			if Obuf != nil {
 				Obuf.WriteString(line)
 			} else {
 				fmt.Print(line)
+			}
+			if len(line) == 0 {
+				fmt.Printf("the start page is larger than the total page of this file,so there are nothing\n")
+			    return
 			}
 		}
 	}
